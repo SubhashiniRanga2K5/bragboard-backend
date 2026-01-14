@@ -1,0 +1,67 @@
+import os
+from pathlib import Path
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+
+
+POSTGRES_DATABASE_URL = "postgresql://user:password@localhost/bragboard_db"
+
+
+SQLITE_DATABASE_URL = f"sqlite:///{DATA_DIR / 'app.db'}"
+
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", SQLITE_DATABASE_URL)
+
+connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
+    echo=False,
+)
+
+# Enable foreign key support for SQLite
+if "sqlite" in DATABASE_URL:
+    from sqlalchemy import event
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
+Base = declarative_base()
+
+
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
+
+
+def get_db():
+    """
+    FastAPI dependency that yields a database session.
+    It handles session creation and automatic closing.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+
+
+def create_db_tables():
+    """Creates all database tables defined in the Base metadata."""
+    Base.metadata.create_all(bind=engine)
+
